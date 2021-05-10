@@ -2,46 +2,84 @@ import pandas as pd
 import numpy as np
 from sklearn import preprocessing
 
-cdt_csv = pd.read_csv('../cadet_training_program_matrix.csv', parse_dates=True)
-cdt_csv = cdt_csv[(cdt_csv['Rank'] == 'Cdt 1st') | (cdt_csv['Rank'] == 'Cdt')]
+cdt_csv = pd.read_csv(r'C:\Users\AnnabelFlook\PycharmProjects\CadetsTP\cadet_training_program_matrix.csv')
 
-date_taken = cdt_csv.drop(['Rank', 'Surname', 'First Name', 'Unit', 'SyllabusCompleted'], axis=1)
-date_taken.set_index(['Pnumber'], drop=True, inplace=True)  # 20 x 48 matrix
-dt = date_taken.apply(pd.to_datetime, errors='coerce', dayfirst=True)
-dn = dt.apply(pd.to_numeric)
 
-# Using my own mind to scale the data
-scaled_dates = ((1 / (dn.apply(np.log) - 41)) - 1.1) * 100
-sd = (scaled_dates.fillna(0))
-# print(scaled_dates[(scaled_dates == scaled_dates.max()) | (scaled_dates == scaled_dates.min())].iloc[-4:]) # 20 x 48 matrix
-# print(dt[(dt == dt.max()) | (dt == dt.min())].iloc[-4:])
+def merge_csv():
+    """Merge all .csv files in folder
+    :return merged pd.DataFrame"""
+    # TODO: Create merge_csv function
+    pass
 
-# Summed as the scaled dates for each pin number
-summed_cadetstime = sd.apply(sum, axis=1)  # 20 x 1 vector
-# print(summed_cadetstime)
+
+def filter_data(merged_df, *ranks):
+    """Filters data by rank, refactors data for use, returns a filtered pd.DataFrame"""
+    filtered_data = merged_df[merged_df['Rank'].isin(ranks)]
+    # If 'Rank' and 'Surname' are not dropped, perhaps create a MultiIndex with this info
+    fd1 = filtered_data.drop(['Rank', 'Surname', 'First Name', 'Unit', 'SyllabusCompleted'], axis=1)
+    fd1.set_index('Pnumber', drop=True, inplace=True)
+    return fd1
+
+
+def create_date_matrix(filtered_data):
+    datetime_df = filtered_data.apply(pd.to_datetime, errors='coerce', dayfirst=True)
+    numeric_data = datetime_df.apply(pd.to_numeric)
+
+    # Scaled empirically
+    scaled_matrix = ((100 / (numeric_data.apply(np.log) - 41)) - 110)
+    scaled_matrix.fillna(0, inplace=True)
+
+    assert scaled_matrix.shape == (len(scaled_matrix.index), 48)
+
+    return scaled_matrix
+
+
+def create_cdt_vector(date_mat):
+    """Create 1 x len(date_mat.index) vector, as the summed dates for each pin number"""
+    cdt_df = date_mat.apply(sum, axis=1)
+    cdt_vec = np.array([cdt_df])
+
+    return cdt_vec
+
+
+def create_module_vector(date_mat):
+    """Create 1 x 48 vector, as the summed dates for each pin number"""
+    mod_df = 1 / date_mat.apply(sum, axis=0)
+    mod_vec = np.array([mod_df])
+
+    return mod_vec
+
+
+def create_rating_matrix(cdt_vec, mod_vec, date_mat):
+    x = len(date_mat.index)
+    assert cdt_vec.shape == (x, 1)
+    assert mod_vec.shape == (48, 1)
+
+    cdt_mod_mat = np.matmul(cdt_vec, mod_vec.T)  # 20 x 48
+    assert cdt_mod_mat.shape == (x, 48)
+
+    rating_mat = date_matrix * cdt_mod_mat
+    return rating_mat
+
+
+filtered_df = filter_data(cdt_csv, 'Cdt 1st', 'Cdt')
+date_matrix = create_date_matrix(filtered_df)
+
 minmax_scaler = preprocessing.MinMaxScaler(feature_range=(0.1, 10))
-X_minmax_cdt = minmax_scaler.fit_transform(np.array([summed_cadetstime]).T) # 20 x 1 vector
-# print(X_minmax.shape)
 
-# Summed as the count of modules completed for each pin number
-# summed_cadetsnumber = sd[sd > 0].count(axis=1)  # 20 x 1 vector
+cdt_vector = create_cdt_vector(date_matrix)
+scaled_cdt_vector = minmax_scaler.fit_transform(cdt_vector.T)  # 20 x 1 vector
+assert cdt_vector.shape == (1, len(date_matrix.index))
+assert scaled_cdt_vector.shape == (len(date_matrix.index), 1)
 
-# The following will need to be transposed in order to combine
-summed_modulestime = 1 / sd.apply(sum, axis=0)  # 48 x 1 vector
-# print(summed_modulestime)
-X_minmax_mod = minmax_scaler.fit_transform(np.array([summed_modulestime]).T) # 48 x 1 vector
-# print(X_minmax_mod)
-# summed_modulesnumber = sd[sd > 0].count(axis=0)  # 48 x 1 vector
+mod_vector = create_module_vector(date_matrix)
+scaled_mod_vector = minmax_scaler.fit_transform(mod_vector.T)  # 48 x 1 vector
+assert mod_vector.shape == (1, 48)
+assert scaled_mod_vector.shape == (48, 1)
 
-# matmul cadets and modules to form 20 x 48 matrix.
-arr1 = np.array([summed_cadetstime]).T  # 20 x 1
-arr2 = np.array([summed_modulestime])# 1 x 48
-scaled_arr1 = X_minmax_cdt
-scaled_arr2 = X_minmax_mod.T
+ratings = create_rating_matrix(cdt_vec=scaled_cdt_vector, mod_vec=scaled_mod_vector, date_mat=date_matrix)
 
-module_cadet_mat = np.matmul(scaled_arr1, scaled_arr2)  # 20 x 48 matrix
-# print(pd.DataFrame(module_cadet_mat).iloc[:2])
-
-ratings = sd * module_cadet_mat
 best_modules_sorted = ratings.sum(axis=0).sort_values(ascending=False)
-print(best_modules_sorted)
+print(best_modules_sorted.head(4))
+
+# TODO: Create rank Class
