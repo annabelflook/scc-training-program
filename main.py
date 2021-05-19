@@ -4,14 +4,10 @@ from sklearn import preprocessing
 from ExtractData import extract_data
 
 
-
-def filter_data(merged_df, ranks: list, syllabus='all'):
+def filter_data(merged_df, ranks: list):
     """Filters data by rank, refactors data for use, returns a filtered pd.DataFrame"""
     filtered_data = merged_df[merged_df['Rank'].isin(ranks)]
     fd1 = filtered_data.drop(['Rank'], axis=1)
-
-    if syllabus != 'all':
-        fd1 = fd1[syllabus]
 
     return fd1
 
